@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
     
     steps:
     - name: Checkout code
@@ -34,20 +35,107 @@ jobs:
       run: mkdir -p reports
     
     - name: Run Bandit
+      continue-on-error: true
       run: |
+        echo "🔍 Running Bandit..."
         pip install bandit
         bandit -r . -f json -o reports/bandit-report.json || true
+        echo "✅ Bandit scan completed"
     
-    - name: Run Semgrep
+    - name: Run Semgrep (SARIF format)
+      continue-on-error: true
       run: |
+        echo "🔍 Running Semgrep..."
         pip install semgrep
+        # Generate SARIF format for GitHub Security
+        semgrep --config=auto --sarif --output=reports/semgrep-report.sarif . || true
+        echo "✅ Semgrep SARIF scan completed"
+    
+    - name: Run Semgrep (JSON format for parsing)
+      continue-on-error: true
+      run: |
+        echo "🔍 Running Semgrep (JSON format)..."
         semgrep --config=auto --json --output=reports/semgrep-report.json . || true
+        echo "✅ Semgrep JSON scan completed"
     
-    - name: Parse Reports
-      run: python scripts/parse_reports.py
+    # Optional: SonarQube scan (requires SONAR_TOKEN)
+    - name: SonarQube Scan (Optional)
+      if: ${{ secrets.SONAR_TOKEN != '' }}
+      continue-on-error: true
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+      run: |
+        echo "🔍 Running SonarQube..."
+        # Install SonarScanner
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+        unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
+        export PATH="$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin"
+        
+        # Run scan
+        sonar-scanner \
+          -Dsonar.projectKey=${{ github.repository_owner }}_${{ github.event.repository.name }} \
+          -Dsonar.organization=${{ github.repository_owner }} \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN || true
+        
+        echo "✅ SonarQube scan completed"
     
-    - name: Generate Summary
-      run: python scripts/generate_security_summary.py
+    # ============================================
+    # Unified Report Processing
+    # ============================================
+    
+    - name: Parse All Security Reports
+      if: always()
+      run: |
+        echo "📊 Parsing all security reports..."
+        python scripts/parse_reports.py --verbose
+    
+    - name: Generate Security Summary
+      if: always()
+      run: |
+        echo "📈 Generating security summary..."
+        python scripts/generate_security_summary.py
+    
+    - name: Generate Security Policies with LLM
+      if: always()
+      continue-on-error: true
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        echo "🤖 Generating security policies..."
+        if [ -n "$OPENAI_API_KEY" ] || [ -n "$HF_TOKEN" ]; then
+          cd LLM/Scripts
+          python generate_policies.py
+          echo "✅ Policies generated successfully"
+        else
+          echo "⚠️  Policy generation skipped (no API keys configured)"
+          echo "💡 Add OPENAI_API_KEY or HF_TOKEN secrets to enable this feature"
+        fi
+    
+    - name: Display Summary in Job Output
+      if: always()
+      run: |
+        echo ""
+        echo "📋 ============================================"
+        echo "📋 SECURITY SCAN SUMMARY"
+        echo "📋 ============================================"
+        echo ""
+        if [ -f reports/security-summary.txt ]; then
+          cat reports/security-summary.txt
+        else
+          echo "❌ No summary generated"
+        fi
+    
+    - name: Upload SARIF to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      continue-on-error: true
+      with:
+        sarif_file: reports/semgrep-report.sarif
+        category: semgrep
     
     - name: Upload Reports
       uses: actions/upload-artifact@v4
@@ -57,4 +145,8 @@ jobs:
         path: |
           reports/*.json
           reports/*.txt
+          reports/*.sarif
+          LLM/reports/*.yaml
+          LLM/reports/*.json
         retention-days: 30
+    

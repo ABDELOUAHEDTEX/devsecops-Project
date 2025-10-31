@@ -30,20 +30,80 @@ jobs:
       run: mkdir -p reports
     
     - name: Run pip-audit
+      continue-on-error: true
       run: |
+        echo "🔍 Running pip-audit..."
         pip install pip-audit
         pip-audit --format=json --output=reports/pip-audit-report.json || true
+        echo "✅ pip-audit scan completed"
     
     - name: Run Safety
+      continue-on-error: true
       run: |
+        echo "🔍 Running Safety..."
         pip install safety
-        safety check --json --output reports/safety-report.json || true
+        safety check --json --output=reports/safety-report.json || true
+        echo "✅ Safety scan completed"
     
-    - name: Parse Reports
-      run: python scripts/parse_reports.py
+    # Optional: Add Snyk (requires SNYK_TOKEN secret)
+    - name: Run Snyk (Optional)
+      if: ${{ secrets.SNYK_TOKEN != '' }}
+      continue-on-error: true
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      run: |
+        echo "🔍 Running Snyk..."
+        npm install -g snyk
+        snyk auth $SNYK_TOKEN
+        snyk test --json --json-file-output=reports/snyk-report.json || true
+        echo "✅ Snyk scan completed"
     
-    - name: Generate Summary
-      run: python scripts/generate_security_summary.py
+    # ============================================
+    # Unified Report Processing
+    # ============================================
+    
+    - name: Parse All Security Reports
+      if: always()
+      run: |
+        echo "📊 Parsing all security reports..."
+        python scripts/parse_reports.py --verbose
+    
+    - name: Generate Security Summary
+      if: always()
+      run: |
+        echo "📈 Generating security summary..."
+        python scripts/generate_security_summary.py
+    
+    - name: Generate Security Policies with LLM
+      if: always()
+      continue-on-error: true
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        echo "🤖 Generating security policies..."
+        if [ -n "$OPENAI_API_KEY" ] || [ -n "$HF_TOKEN" ]; then
+          cd LLM/Scripts
+          python generate_policies.py
+          echo "✅ Policies generated successfully"
+        else
+          echo "⚠️  Policy generation skipped (no API keys configured)"
+          echo "💡 Add OPENAI_API_KEY or HF_TOKEN secrets to enable this feature"
+        fi
+    
+    - name: Display Summary in Job Output
+      if: always()
+      run: |
+        echo ""
+        echo "📋 ============================================"
+        echo "📋 SECURITY SCAN SUMMARY"
+        echo "📋 ============================================"
+        echo ""
+        if [ -f reports/security-summary.txt ]; then
+          cat reports/security-summary.txt
+        else
+          echo "❌ No summary generated"
+        fi
     
     - name: Upload Reports
       uses: actions/upload-artifact@v4
@@ -53,4 +113,7 @@ jobs:
         path: |
           reports/*.json
           reports/*.txt
+          LLM/reports/*.yaml
+          LLM/reports/*.json
         retention-days: 30
+    

@@ -31,31 +31,107 @@ jobs:
     
     - name: Start Application
       run: |
-        # Démarrer votre application ici
+        echo "🚀 Starting Flask application..."
         python app.py &
         APP_PID=$!
         echo "APP_PID=$APP_PID" >> $GITHUB_ENV
-        sleep 10
+        
+        # Wait for app to be ready
+        echo "⏳ Waiting for application to start..."
+        for i in {1..30}; do
+          if curl -sf http://localhost:5000 > /dev/null 2>&1; then
+            echo "✅ Application is running on http://localhost:5000"
+            break
+          fi
+          echo "   Attempt $i/30..."
+          sleep 2
+        done
+        
+        # Verify app is running
+        if ! curl -sf http://localhost:5000 > /dev/null 2>&1; then
+          echo "❌ Failed to start application"
+          exit 1
+        fi
     
-    - name: Run OWASP ZAP
+    - name: Run OWASP ZAP Baseline Scan
+      continue-on-error: true
       run: |
+        echo "🔍 Running OWASP ZAP security scan..."
         docker run --network="host" \
           -v $(pwd)/reports:/zap/wrk/:rw \
           ghcr.io/zaproxy/zaproxy:stable \
           zap-baseline.py -t http://localhost:5000 \
-          -J /zap/wrk/zap-report.json || true
+          -J /zap/wrk/zap-report.json \
+          -r /zap/wrk/zap-report.html || true
+        
+        echo "✅ ZAP scan completed"
+        
+        # Verify report was created
+        if [ -f reports/zap-report.json ]; then
+          echo "✅ ZAP JSON report created successfully"
+        else
+          echo "⚠️  ZAP JSON report not found"
+        fi
     
     - name: Stop Application
       if: always()
-      run: kill $APP_PID || true
+      run: |
+        echo "🛑 Stopping Flask application..."
+        if [ -n "$APP_PID" ]; then
+          kill $APP_PID 2>/dev/null || true
+          # Wait a bit for graceful shutdown
+          sleep 2
+          # Force kill if still running
+          kill -9 $APP_PID 2>/dev/null || true
+          echo "✅ Application stopped"
+        fi
     
-    - name: Parse Reports
-      if: always()
-      run: python scripts/parse_reports.py
+    # ============================================
+    # Unified Report Processing
+    # ============================================
     
-    - name: Generate Summary
+    - name: Parse All Security Reports
       if: always()
-      run: python scripts/generate_security_summary.py
+      run: |
+        echo "📊 Parsing all security reports..."
+        python scripts/parse_reports.py --verbose
+    
+    - name: Generate Security Summary
+      if: always()
+      run: |
+        echo "📈 Generating security summary..."
+        python scripts/generate_security_summary.py
+    
+    - name: Generate Security Policies with LLM
+      if: always()
+      continue-on-error: true
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        echo "🤖 Generating security policies..."
+        if [ -n "$OPENAI_API_KEY" ] || [ -n "$HF_TOKEN" ]; then
+          cd LLM/Scripts
+          python generate_policies.py
+          echo "✅ Policies generated successfully"
+        else
+          echo "⚠️  Policy generation skipped (no API keys configured)"
+          echo "💡 Add OPENAI_API_KEY or HF_TOKEN secrets to enable this feature"
+        fi
+    
+    - name: Display Summary in Job Output
+      if: always()
+      run: |
+        echo ""
+        echo "📋 ============================================"
+        echo "📋 SECURITY SCAN SUMMARY"
+        echo "📋 ============================================"
+        echo ""
+        if [ -f reports/security-summary.txt ]; then
+          cat reports/security-summary.txt
+        else
+          echo "❌ No summary generated"
+        fi
     
     - name: Upload Reports
       uses: actions/upload-artifact@v4
@@ -64,5 +140,8 @@ jobs:
         name: dast-reports
         path: |
           reports/*.json
+          reports/*.html
           reports/*.txt
+          LLM/reports/*.yaml
+          LLM/reports/*.json
         retention-days: 30

@@ -1,6 +1,5 @@
 ### 4.1 Create `parsers/sast_parser.py`
 
-```python
 """
 SAST (Static Application Security Testing) Parser
 Supports: SonarQube, SARIF (CodeQL, Semgrep), Bandit
