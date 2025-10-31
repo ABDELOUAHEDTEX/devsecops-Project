@@ -1,0 +1,60 @@
+name: SAST Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  sast-scan:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create reports directory
+      run: mkdir -p reports
+    
+    - name: Run Bandit
+      run: |
+        pip install bandit
+        bandit -r . -f json -o reports/bandit-report.json || true
+    
+    - name: Run Semgrep
+      run: |
+        pip install semgrep
+        semgrep --config=auto --json --output=reports/semgrep-report.json . || true
+    
+    - name: Parse Reports
+      run: python scripts/parse_reports.py
+    
+    - name: Generate Summary
+      run: python scripts/generate_security_summary.py
+    
+    - name: Upload Reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: sast-reports
+        path: |
+          reports/*.json
+          reports/*.txt
+        retention-days: 30
