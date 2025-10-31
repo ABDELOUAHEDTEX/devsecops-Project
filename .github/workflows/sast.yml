@@ -60,17 +60,25 @@ jobs:
     
     # Optional: SonarQube scan (requires SONAR_TOKEN)
     - name: SonarQube Scan (Optional)
-      if: ${{ secrets.SONAR_TOKEN != '' }}
       continue-on-error: true
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
       run: |
+        if [ -z "$SONAR_TOKEN" ]; then
+          echo "⚠️  SonarQube scan skipped (SONAR_TOKEN not configured)"
+          echo "💡 Add SONAR_TOKEN secret to enable this feature"
+          exit 0
+        fi
+        
         echo "🔍 Running SonarQube..."
         # Install SonarScanner
         wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
         unzip -q sonar-scanner-cli-4.8.0.2856-linux.zip
         export PATH="$PATH:$(pwd)/sonar-scanner-4.8.0.2856-linux/bin"
+        
+        # Default SONAR_HOST_URL if not provided by secret
+        SONAR_HOST_URL=${SONAR_HOST_URL:-https://sonarcloud.io}
         
         # Run scan
         sonar-scanner \

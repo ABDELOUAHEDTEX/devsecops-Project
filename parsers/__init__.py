@@ -6,11 +6,13 @@ from .dast_parser import DASTParser
 from .sca_parser import SCAParser
 
 __all__ = [
-    'BaseParser',
-    'ParserFactory',
-    'SASTParser',
-    'DASTParser',
-    'SCAParser',
+    "BaseParser",
+    "ParserFactory",
+    "SASTParser",
+    "DASTParser",
+    "SCAParser",
 ]
 
-__version__ = '1.0.0'
+__version__ = "1.0.0"
+
+

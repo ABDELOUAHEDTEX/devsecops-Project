@@ -28,7 +28,7 @@ class SASTParser(BaseParser):
         'S2076': 'CWE-78',   # OS Command Injection
         
         # Bandit rules
-        'B201': 'CWE-78',    # Flask debug mode
+        
         'B501': 'CWE-295',   # Request with verify=False
         'B506': 'CWE-798',   # YAML load
         'B608': 'CWE-89',    # SQL injection
@@ -287,22 +287,4 @@ class SASTParser(BaseParser):
     def get_tool_type(self) -> str:
         """Get scan type"""
         return 'SAST'
-```
-
-**File:** `parsers/sast_parser.py`
-
-### 4.2 Commit Changes
-
-```bash
-git add parsers/sast_parser.py
-git commit -m "feat: add SAST parser with SonarQube, SARIF, and Bandit support"
-```
-
----
-
-## Step 5: DAST Parser
-
-### 5.1 Create `parsers/dast_parser.py`
-
-I'll continue with the complete source code for all remaining components.
 

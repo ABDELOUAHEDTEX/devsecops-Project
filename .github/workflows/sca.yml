@@ -47,11 +47,16 @@ jobs:
     
     # Optional: Add Snyk (requires SNYK_TOKEN secret)
     - name: Run Snyk (Optional)
-      if: ${{ secrets.SNYK_TOKEN != '' }}
       continue-on-error: true
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
       run: |
+        if [ -z "$SNYK_TOKEN" ]; then
+          echo "⚠️  Snyk scan skipped (SNYK_TOKEN not configured)"
+          echo "💡 Add SNYK_TOKEN secret to enable this feature"
+          exit 0
+        fi
+        
         echo "🔍 Running Snyk..."
         npm install -g snyk
         snyk auth $SNYK_TOKEN
