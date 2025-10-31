@@ -54,3 +54,12 @@ uploads/*
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Security Reports (should not be committed)
+reports/*.json
+reports/*.html
+reports/*.xml
+reports/*.sarif
+reports/*.log
+reports/*.txt
+!reports/.gitkeep
